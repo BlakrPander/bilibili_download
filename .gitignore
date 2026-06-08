@@ -18,5 +18,12 @@ __pycache__/
 # pyenv
 .python-version
 
+# 构建产物
+*.spec
+build/
+dist/
+dist_release/
+*.zip
+
 # macOS
 .DS_Store

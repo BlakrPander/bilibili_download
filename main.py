@@ -31,6 +31,8 @@ QUALITY_MAP: Dict[str, int] = {
     "1080P+": 112,
     "4K": 120,
 }
+# 反向映射：qn 值 → 名称
+QN_NAMES: Dict[int, str] = {v: k for k, v in QUALITY_MAP.items()}
 
 DEFAULT_OUTPUT_DIR = "downloads"
 COOKIE_FILE = Path(__file__).parent / "cookies.json"
@@ -60,7 +62,30 @@ class BilibiliDownloader:
             "Referer": "https://www.bilibili.com",
         })
         self._has_ffmpeg: Optional[bool] = None
-        self._playwright = None  # 懒加载
+        self._playwright = None
+
+        # 启动时尝试加载 cookie，有则直接用于所有下载请求
+        self._apply_saved_cookies()
+
+    def _apply_saved_cookies(self) -> None:
+        """将 cookies.json 中的 cookie 同步到 requests session"""
+        saved = self._load_cookies()
+        if saved:
+            cookie_str = "; ".join(
+                f"{c['name']}={c['value']}"
+                for c in saved
+                if c.get("name") and c.get("value")
+            )
+            if cookie_str:
+                self.session.headers["Cookie"] = cookie_str
+
+    def _check_cookies_valid(self) -> bool:
+        """用 nav API 快速验证 cookie 是否有效（不依赖 Playwright）"""
+        data = self._request("GET", "https://api.bilibili.com/x/web-interface/nav")
+        if data and data.get("data", {}).get("isLogin"):
+            print(f"  ✓ 已登录: {data['data']['uname']}")
+            return True
+        return False
 
     # ========================================================================
     # 内部工具
@@ -168,20 +193,39 @@ class BilibiliDownloader:
             "duration": vd["duration"],
         }
 
-    def get_play_url_data(self, bvid: str, cid: int, quality: int = 80) -> Optional[Dict[str, Any]]:
-        """获取播放地址（fnval=4048 同时返回 DASH 和传统流）"""
+    def get_play_url_data(self, bvid: str, cid: int, quality: int = 80,
+                          fnval: int = 4048) -> Optional[Dict[str, Any]]:
+        """获取播放地址。fnval=4048=DASH+durl，fnval=1=仅传统流"""
         from urllib.parse import urlencode
         params = urlencode({
             "bvid": bvid,
             "cid": cid,
             "qn": quality,
-            "fnval": 4048,
+            "fnval": fnval,
             "fourk": 1,
         })
         data = self._request(
             "GET", f"https://api.bilibili.com/x/player/playurl?{params}"
         )
         return data.get("data") if data else None
+
+    def get_available_qualities(self, bvid: str, cid: int) -> List[Tuple[str, int]]:
+        """
+        获取视频实际可用的清晰度列表。
+        先请求最高画质，从响应的 accept_quality 中提取。
+        """
+        play_data = self.get_play_url_data(bvid, cid, quality=120)
+        if not play_data:
+            return []
+        accept = play_data.get("accept_quality", [])
+        if not accept:
+            accept = [play_data.get("quality", 0)]
+        result = []
+        for qn in sorted(accept, reverse=True):
+            name = QN_NAMES.get(qn)
+            if name:
+                result.append((name, qn))
+        return result
 
     # ========================================================================
     # 下载核心
@@ -307,14 +351,40 @@ class BilibiliDownloader:
         # --- 完整视频 ---
         dash = play_data.get("dash")
         durl = play_data.get("durl")
+        actual_quality = play_data.get("quality", 0)
 
-        if dash and dash.get("video") and dash.get("audio") and self._check_ffmpeg():
-            videos = sorted(dash["video"], key=lambda x: x["bandwidth"], reverse=True)
+        # 质量降级提示
+        if actual_quality < quality and show_detail:
+            req_name = QN_NAMES.get(quality, str(quality))
+            got_name = QN_NAMES.get(actual_quality, str(actual_quality))
+            print(f"  ⚠ {req_name} 不可用，实际画质: {got_name}")
+
+        # 比较 DASH 和 durl 各自的最佳质量，选更优的
+        dash_best_q = max((v["id"] for v in dash["video"]), default=0) if dash and dash.get("video") else 0
+        durl_q = actual_quality
+
+        # fnval=4048 有时不返回 durl，但传统流画质可能更好 → 补一次 fnval=1 请求
+        if durl_q > dash_best_q and not durl:
+            if show_detail:
+                print("  正在查询传统流…")
+            durl_data = self.get_play_url_data(bvid, video_info["cid"],
+                                               quality, fnval=1)
+            if durl_data:
+                durl = durl_data.get("durl")
+
+        prefer_dash = (
+            dash and dash.get("video") and dash.get("audio")
+            and self._check_ffmpeg()
+            and dash_best_q >= durl_q
+        )
+
+        if prefer_dash:
+            videos = sorted(dash["video"], key=lambda x: (x["id"], x["bandwidth"]), reverse=True)
             audios = sorted(dash["audio"], key=lambda x: x["bandwidth"], reverse=True)
 
             if show_detail:
-                print(f"  视频编码: {videos[0].get('codecs', 'unknown')}")
-                print(f"  音频编码: {audios[0].get('codecs', 'unknown')}")
+                dash_name = QN_NAMES.get(videos[0]["id"], str(videos[0]["id"]))
+                print(f"  画质: {dash_name}  |  编码: {videos[0].get('codecs', 'unknown')}")
 
             tmp_video = output_path / f".tmp_{safe_title}_video.m4s"
             tmp_audio = output_path / f".tmp_{safe_title}_audio.m4s"
@@ -335,8 +405,36 @@ class BilibiliDownloader:
         elif durl:
             if len(durl) > 1:
                 print(f"  ⚠ 该视频有 {len(durl)} 个分段，将只下载第一段")
-            print(f"  下载: {safe_title}.mp4")
+            durl_name = QN_NAMES.get(durl_q, str(durl_q))
+            print(f"  画质: {durl_name}  |  下载: {safe_title}.mp4")
             return self._download_file(durl[0]["url"], output_path / f"{safe_title}.mp4")
+
+        elif dash and dash.get("video") and dash.get("audio") and self._check_ffmpeg():
+            # durl 不可用，兜底走 DASH
+            if show_detail:
+                print("  ⚠ 传统流不可用，使用 DASH 流")
+            videos = sorted(dash["video"], key=lambda x: (x["id"], x["bandwidth"]), reverse=True)
+            audios = sorted(dash["audio"], key=lambda x: x["bandwidth"], reverse=True)
+
+            if show_detail:
+                dash_name = QN_NAMES.get(videos[0]["id"], str(videos[0]["id"]))
+                print(f"  画质: {dash_name}  |  编码: {videos[0].get('codecs', 'unknown')}")
+
+            tmp_video = output_path / f".tmp_{safe_title}_video.m4s"
+            tmp_audio = output_path / f".tmp_{safe_title}_audio.m4s"
+
+            print("  下载视频流…")
+            if not self._download_file(videos[0]["base_url"], tmp_video):
+                tmp_audio.unlink(missing_ok=True)
+                return False
+
+            print("  下载音频流…")
+            if not self._download_file(audios[0]["base_url"], tmp_audio):
+                tmp_video.unlink(missing_ok=True)
+                return False
+
+            print("  合并音视频…")
+            return self._merge_video_audio(tmp_video, tmp_audio, output_path / f"{safe_title}.mp4")
 
         else:
             print("  ✗ 无法获取视频下载地址")
@@ -463,6 +561,7 @@ class BilibiliDownloader:
 
             cookies = context.cookies()
             self._save_cookies(cookies)
+            self._apply_saved_cookies()
             print(f"  ✓ 已保存 {len(cookies)} 条 cookie 到 {COOKIE_FILE}")
             browser.close()
             return cookies
@@ -711,18 +810,27 @@ class BilibiliDownloader:
 # 交互界面
 # ============================================================================
 
-def _select_quality() -> int:
-    """交互式选择清晰度"""
-    print("\n可选清晰度:")
-    items = list(QUALITY_MAP.items())
+def _select_quality(available: Optional[List[Tuple[str, int]]] = None) -> int:
+    """交互式选择清晰度。传入 available 则只显示可用画质。"""
+    if available:
+        items = available
+        print(f"\n该视频可用清晰度 ({len(items)} 种):")
+    else:
+        items = list(QUALITY_MAP.items())
+        print("\n可选清晰度:")
+
     for i, (label, _) in enumerate(items, 1):
         print(f"  {i}. {label}")
     print(f"  {len(items) + 1}. 不选择（返回）")
 
+    default_idx = min(3, len(items) - 1)  # 默认选靠高画质
+    default_label = items[default_idx][0] if len(items) > default_idx else items[-1][0]
+    default_qn = items[default_idx][1] if len(items) > default_idx else items[-1][1]
+
     while True:
-        choice = input(f"请选择 (1-{len(items)}, 默认 4=1080P): ").strip()
+        choice = input(f"请选择 (1-{len(items)}, 默认 {default_idx + 1}={default_label}): ").strip()
         if not choice:
-            return 80
+            return default_qn
         if choice == str(len(items) + 1):
             return -1
         try:
@@ -756,7 +864,15 @@ def _interactive(downloader: BilibiliDownloader) -> None:
             url = input("视频URL或BV号: ").strip()
             if not url:
                 continue
-            quality = _select_quality()
+            # 预查可用画质
+            available = None
+            bvid = downloader.extract_bv(url)
+            if bvid:
+                info = downloader.get_video_info(bvid)
+                if info:
+                    print("  正在查询可用画质…")
+                    available = downloader.get_available_qualities(bvid, info["cid"])
+            quality = _select_quality(available if available else None)
             if quality < 0:
                 continue
             output = input(f"保存目录 (默认 ./{DIR_SINGLE}): ").strip()
@@ -784,6 +900,19 @@ def _interactive(downloader: BilibiliDownloader) -> None:
             url = downloader._pick_uploader()
             if not url:
                 continue
+
+            # 验证链接有效性
+            mid = downloader._get_mid_from_url(url)
+            if not mid:
+                bvid = downloader.extract_bv(url)
+                if bvid:
+                    print("  正在通过视频链接获取 UP 主信息…")
+                    mid = downloader._get_mid_from_video(bvid)
+            if not mid:
+                print("  ✗ 无法识别该链接，请确认是 UP 主空间链接或视频链接后重试")
+                continue
+            print(f"  ✓ UP主 mid={mid}")
+
             try:
                 n = input("下载数量 (默认10): ").strip()
                 count = int(n) if n else 10
@@ -837,6 +966,20 @@ def main() -> None:
             downloader.download(url, output, audio_only=audio_only, quality=quality)
 
     else:
+        # 启动时检测登录状态
+        if COOKIE_FILE.exists():
+            print("  检测到登录信息，验证中…")
+            if not downloader._check_cookies_valid():
+                print("  ⚠ Cookie 已过期，需要重新登录")
+                downloader._ensure_cookies()
+        else:
+            print("  未检测到登录信息（登录后可解锁 1080P+ 高清画质）")
+            choice = input("  是否现在登录？[Y/n]: ").strip().lower()
+            if choice in ("", "y", "yes"):
+                downloader._ensure_cookies()
+            else:
+                print("  已跳过，将以游客模式运行（画质受限）\n")
+
         _interactive(downloader)
 
 
