@@ -311,24 +311,16 @@ UP主爬取:
 
 ## 开源协议
 
-MIT License
+本软件采用 **Creative Commons Attribution-NonCommercial 4.0 (CC BY-NC 4.0)** 协议。
 
-Copyright (c) 2026 BlakrPander
+您可以自由地：
+- **共享** — 复制、分发本软件
+- **修改** — 创作衍生作品
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+但需遵守以下条件：
+- **署名** — 必须标注原作者（BlakrPander）及原始项目链接
+- **非商业性使用** — 不得将本软件用于商业目的
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+完整协议文本：https://creativecommons.org/licenses/by-nc/4.0/legalcode.zh-hans
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
