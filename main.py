@@ -780,9 +780,17 @@ class BilibiliDownloader:
         space_url = f"https://space.bilibili.com/{mid}"
         self._save_uploader(mid, author_name, space_url)
 
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_dir = Path(output_base) / author_name / timestamp
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # 去掉时间戳，直接存到 UP 主名/ 下
+        output_dir = Path(output_base) / author_name
+
+        # 加载下载记录用于去重
+        manifest_path = output_dir / "_downloaded.json"
+        manifest: Dict[str, int] = {}
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text("utf-8"))
+            except Exception:
+                pass
 
         mode_label = "音频" if audio_only else "视频"
         print(f"\n{'=' * 55}")
@@ -792,16 +800,36 @@ class BilibiliDownloader:
 
         success = 0
         fail = 0
+        skip = 0
+        dl_type = "audio" if audio_only else "video"
         for i, v in enumerate(videos, 1):
+            # 去重：同类型且画质 >= 当前 → 跳过；不同类型照下
+            info = self.get_video_info(v["bvid"])
+            safe_title = self._sanitize_filename(info["title"]) if info else v["bvid"]
+            prev = manifest.get(safe_title)
+            if prev and prev.get("type") == dl_type and prev.get("qn", 0) >= quality:
+                exist_name = QN_NAMES.get(prev["qn"], str(prev["qn"]))
+                req_name = QN_NAMES.get(quality, str(quality))
+                print(f"[{i}/{len(videos)}] ⏭ 跳过: {safe_title[:40]}… (已有 {exist_name} ≥ {req_name})")
+                skip += 1
+                continue
+
             print(f"[{i}/{len(videos)}]", end="")
             if self.download(v["bvid"], str(output_dir), audio_only, quality, show_detail=True):
                 success += 1
+                manifest[safe_title] = {"qn": quality, "type": dl_type}
             else:
                 fail += 1
             print()
 
+        # 保存下载记录
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), "utf-8")
+
+        if skip > 0:
+            print(f"  ⏭ 跳过 {skip} 个（已下载过同等或更高画质）")
         print(f"{'=' * 55}")
-        print(f"  📊 UP主下载完成: 成功 {success} / 失败 {fail}")
+        print(f"  📊 UP主下载完成: 成功 {success} / 失败 {fail} / 跳过 {skip}")
         print(f"{'=' * 55}")
         return success, fail, str(output_dir)
 

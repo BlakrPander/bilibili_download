@@ -168,13 +168,12 @@ UP主空间URL: https://space.bilibili.com/27492426
 
 ```
 downloads/uploader/
-└── 戒社/                          ← 按 UP 主名分类
-    ├── 2026-06-08_15-35-28/       ← 按下载时间分类
-    │   ├── 视频1.m4a
-    │   └── 视频2.m4a
-    └── 2026-06-08_17-40-15/
-        └── ...
+└── 戒社/                    ← 按 UP 主名
+    ├── video/               ← 视频
+    └── audio/               ← 音频
 ```
+
+下载前自动查重：同类型且已有画质 ≥ 当前 → 跳过；已有画质较低 → 覆盖升级。记录保存在 `_downloaded.json`。
 
 每次下载后自动保存 UP 主到收藏（`uploaders.json`），下次可直接选择。
 
@@ -207,24 +206,17 @@ python main.py uploader "https://space.bilibili.com/27492426" 10 audio
 
 ```
 downloads/
-├── single/                          # 单个下载
-│   ├── video/
-│   │   └── {视频标题}.mp4
-│   └── audio/
-│       └── {视频标题}.m4a
-├── batch/                           # 批量下载
+├── single/                    # 单个下载
+│   ├── video/                 # 视频 (.mp4)
+│   └── audio/                 # 音频 (.m4a)
+├── batch/                     # 批量下载
 │   └── {YYYY-MM-DD_HH-MM-SS}/
 │       ├── video/
-│       │   └── {视频标题}.mp4
 │       └── audio/
-│           └── {视频标题}.m4a
-└── uploader/                        # UP主下载
+└── uploader/                  # UP主下载（无时间戳）
     └── {UP主名}/
-        └── {YYYY-MM-DD_HH-MM-SS}/
-            ├── video/
-            │   └── {视频标题}.mp4
-            └── audio/
-                └── {视频标题}.m4a
+        ├── video/
+        └── audio/
 ```
 
 ## 数据文件
@@ -294,3 +286,49 @@ UP主爬取:
   Playwright (带 cookie) → 渲染空间页面 → 提取 DOM 中的 BV 链接
     └─ 逐个 requests 下载（同上）
 ```
+
+---
+
+## 更新日志
+
+### v1.1 (2026-06-08)
+- 🔐 **全局登录** — 启动时自动检测/引导登录，所有下载模式共享登录态，解锁 1080P+ 高清画质
+- 🎯 **智能画质** — 动态查询视频实际可用清晰度后再展示菜单，过滤虚假画质选项
+- 🔀 **DASH/durl 择优** — 自动比较两种流的实际画质，选更优的下载；durl 为空时补请求兜底
+- 📂 **video/audio 分离** — single、batch、uploader 下均自动归类到 video/ 或 audio/ 子目录
+- 🗂 **UP主目录扁平化** — 去掉时间戳层级，直接 `{UP主名}/video/` 和 `audio/`
+- ✅ **下载去重** — UP主模式自动检查 `_downloaded.json`，同画质跳过、低画质覆盖升级
+- 🔗 **UP主链接预验证** — 输入链接后先验证有效性，通过后才询问下载数量
+
+### v1.0 (2026-06-08)
+- 📺 单个视频/音频下载，支持 360P ~ 4K 清晰度
+- 📦 批量下载（input.txt）
+- 🔍 UP主空间爬取（Playwright + Cookie 管理）
+- ⭐ UP主收藏（uploaders.json）
+- 📊 实时下载进度条
+
+---
+
+## 开源协议
+
+MIT License
+
+Copyright (c) 2026 BlakrPander
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
