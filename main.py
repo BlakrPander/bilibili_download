@@ -68,16 +68,17 @@ class BilibiliDownloader:
         self._apply_saved_cookies()
 
     def _apply_saved_cookies(self) -> None:
-        """将 cookies.json 中的 cookie 同步到 requests session"""
+        """将 cookies.json 中的 cookie 逐条注入 requests session 的 cookie jar"""
         saved = self._load_cookies()
         if saved:
-            cookie_str = "; ".join(
-                f"{c['name']}={c['value']}"
-                for c in saved
-                if c.get("name") and c.get("value")
-            )
-            if cookie_str:
-                self.session.headers["Cookie"] = cookie_str
+            for c in saved:
+                if c.get("name") and c.get("value"):
+                    self.session.cookies.set(
+                        name=c["name"],
+                        value=c["value"],
+                        domain=c.get("domain", ""),
+                        path=c.get("path", "/"),
+                    )
 
     def _check_cookies_valid(self) -> bool:
         """用 nav API 快速验证 cookie 是否有效（不依赖 Playwright）"""
@@ -207,7 +208,12 @@ class BilibiliDownloader:
         data = self._request(
             "GET", f"https://api.bilibili.com/x/player/playurl?{params}"
         )
-        return data.get("data") if data else None
+        if not data:
+            return None
+        result = data.get("data")
+        if not result:
+            print(f"  ⚠ 播放地址为空 (code={data.get('code')})，可能需要登录或视频受限")
+        return result
 
     def get_available_qualities(self, bvid: str, cid: int) -> List[Tuple[str, int]]:
         """
@@ -363,14 +369,16 @@ class BilibiliDownloader:
         dash_best_q = max((v["id"] for v in dash["video"]), default=0) if dash and dash.get("video") else 0
         durl_q = actual_quality
 
-        # fnval=4048 有时不返回 durl，但传统流画质可能更好 → 补一次 fnval=1 请求
-        if durl_q > dash_best_q and not durl:
+        # fnval=4048 经常不返回 durl；没 ffmpeg 时只能靠 durl → 无条件补拉
+        if not durl:
             if show_detail:
                 print("  正在查询传统流…")
             durl_data = self.get_play_url_data(bvid, video_info["cid"],
                                                quality, fnval=1)
             if durl_data:
                 durl = durl_data.get("durl")
+                if durl:
+                    durl_q = durl_data.get("quality", durl_q)
 
         prefer_dash = (
             dash and dash.get("video") and dash.get("audio")
