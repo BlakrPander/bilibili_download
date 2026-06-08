@@ -331,7 +331,7 @@ class BilibiliDownloader:
             return False
 
         safe_title = self._sanitize_filename(video_info["title"])
-        output_path = Path(output_dir)
+        output_path = Path(output_dir) / ("audio" if audio_only else "video")
         output_path.mkdir(parents=True, exist_ok=True)
 
         # --- 仅音频 ---
