@@ -1,0 +1,22 @@
+# 虚拟环境
+.venv/
+
+# 下载输出
+downloads/
+
+# 个人数据（登录态 / UP主收藏）
+cookies.json
+uploaders.json
+
+# 批量下载链接（个人内容）
+input.txt
+
+# Python
+__pycache__/
+*.pyc
+
+# pyenv
+.python-version
+
+# macOS
+.DS_Store
