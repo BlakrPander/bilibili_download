@@ -25,5 +25,11 @@ dist/
 dist_release/
 *.zip
 
+# 外部参考代码
+reference/
+
 # macOS
 .DS_Store
+
+# 测试文件（含个人 BV 号/UP主参数）
+tests/

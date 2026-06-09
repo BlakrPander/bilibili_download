@@ -291,6 +291,16 @@ UP主爬取:
 
 ## 更新日志
 
+### v1.2 (2026-06-09)
+- 🏗️ **模块化重构** — 将 1024 行单体 `main.py` 拆分为 8 个模块（`config` / `utils` / `auth` / `api` / `scraper` / `downloader` / `cli`），职责清晰、可测试
+- 🐛 **修复 session cookie 同步** — `ensure_cookies()` 登录后自动将 cookie 注入 session，避免"已登录但无法下载高清"的问题
+- 🐛 **修复 Demeter 法则违反** — cli.py 不再通过 `downloader.api.xxx()` 链式调用，改为直接依赖 `BiliAPI`
+- ♻️ **消除 DASH 下载重复** — 提取 `_download_dash()` 方法，两个 DASH 分支共享同一实现
+- ♻️ **消除 mid 解析重复** — 提取 `BiliAPI.resolve_mid()`，cli.py 和 downloader.py 共用
+- ♻️ **User-Agent 常量化** — 从 3 处硬编码提取为 `config.USER_AGENT`
+- ✅ **集成测试** — 4 个核心操作的自动化回归测试，`python tests/test_downloader.py all` 一键验证
+- 📝 **BBDown 参考代码** — 引入 C# 版 B站下载器源码到 `reference/` 作为设计参考
+
 ### v1.1.1 (2026-06-08)
 - 🔧 **修复 Windows 无 ffmpeg 无法下载** — durl 为空时无条件补拉传统流
 - 🔧 **Cookie 请求修复** — 改用 requests cookie jar，解决登录后仍无法获取高清画质
